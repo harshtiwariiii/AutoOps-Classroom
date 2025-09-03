@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.env
+venv/
+mlops/
+.env
+
+# Streamlit
+.streamlit/
+
+# VS Code
+.vscode/
+
+# Data & Models
+data/*.db
+data/sample_cvs/*
+models/*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Others
+*.bak
+*.swp
+*.tmp
