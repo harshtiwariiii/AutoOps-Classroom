@@ -9,6 +9,7 @@ from docx import Document
 import sqlite3
 import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
+import spacy
 
 app = FastAPI()
 
@@ -58,14 +59,23 @@ def extract_text_from_pdf(file_path):
             text += page.extract_text() or ""
     return text
 
+# Improved name extraction using spaCy
+
+nlp = spacy.load("en_core_web_sm")
+def extract_name(text):
+    doc = nlp(text)
+    for ent in doc.ents:
+        if ent.label_ == "PERSON":
+            return ent.text
+    return "Unknown"
+
 def extract_text_from_docx(file_path):
     doc = Document(file_path)
     return " ".join([para.text for para in doc.paragraphs])
 
 def extract_skills(text):
     text = text.lower()
-    found_skills = [skill for skill in SKILL_KEYWORDS if skill in text]
-    return found_skills
+    return [skill for skill in SKILL_KEYWORDS if skill in text]
 
 @app.post("/extract-skills/")
 async def extract_skills_api(file: UploadFile = File(...)):
@@ -80,8 +90,9 @@ async def extract_skills_api(file: UploadFile = File(...)):
         os.remove(temp_path)
         return JSONResponse({"error": "Unsupported file type"}, status_code=400)
     os.remove(temp_path)
+    name = extract_name(text)
     skills = extract_skills(text)
-    return {"skills": skills}
+    return {"name": name, "skills": skills}
 
 # Recommendation logic
 def get_recommendations():
@@ -116,6 +127,16 @@ def get_recommendations():
     students_conn.close()
     courses_conn.close()
     return recommendations
+
+# Get recommendations for a specific student name
+def get_recommendations_for_name(student_name):
+    all_recs = get_recommendations()
+    return all_recs.get(student_name, [])
+
+@app.get("/recommendations/{student_name}")
+def recommendations_for_name_api(student_name: str):
+    recs = get_recommendations_for_name(student_name)
+    return JSONResponse(content={"recommendations": recs})
 
 @app.get("/recommendations")
 def recommendations_api():

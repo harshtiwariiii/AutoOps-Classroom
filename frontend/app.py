@@ -15,16 +15,21 @@ if uploaded_file:
     try:
         response = requests.post(extract_url, files=files)
         if response.status_code == 200:
-            skills = response.json().get("skills", [])
+            data = response.json()
+            name = data.get("name", "Unknown")
+            skills = data.get("skills", [])
+            st.write(f"Extracted Name: {name}")
             st.write(f"Extracted Skills: {', '.join(skills) if skills else 'None found'}")
-            # Get personalized recommendations
-            if skills:
-                rec_response = requests.post(personalized_url, json={"skills": skills})
-                if rec_response.status_code == 200:
-                    recs = rec_response.json().get("recommendations", [])
-                    st.header("Personalized Course Recommendations:")
-                    for course in recs:
-                        st.write(f"{course['course_name']}: {course['score']}")
+            # Get recommendations for this name
+            rec_url = f"http://127.0.0.1:8000/recommendations/{name}"
+            rec_response = requests.get(rec_url)
+            if rec_response.status_code == 200:
+                recs = rec_response.json().get("recommendations", [])
+                st.header(f"Course Recommendations for {name}:")
+                for course in recs:
+                    st.write(f"{course['course_name']}: {course['score']}")
+            else:
+                st.error("Could not fetch recommendations for this name.")
         else:
             st.error(f"Error: {response.json().get('error', 'Unknown error')}")
     except Exception as e:
