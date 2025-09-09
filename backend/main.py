@@ -1,17 +1,55 @@
-# Backend entry point
-from fastapi import FastAPI, File, UploadFile
+
+from fastapi import FastAPI, File, UploadFile, Request
 from fastapi.responses import JSONResponse
+from typing import List
 import uvicorn
 import os
-
-# For PDF and DOCX extraction
 import pdfplumber
 from docx import Document
+import sqlite3
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
 
 app = FastAPI()
 
-# Define skill keywords
-SKILL_KEYWORDS = ["python", "aws", "cli", "networking", "docker", "linux", "git", "mlops", "devops"]
+# Personalized recommendation based on extracted skills
+def recommend_for_skills(skills: List[str]):
+    courses_conn = sqlite3.connect('data/courses.db')
+    course_df = pd.read_sql_query('''
+        SELECT c.course_id, c.course_name, cs.skill, cs.weight
+        FROM courses c
+        JOIN course_skills cs ON c.course_id = cs.course_id
+    ''', courses_conn)
+    course_matrix = course_df.pivot_table(index=['course_id','course_name'], columns='skill', values='weight', fill_value=0)
+    # Create student vector from skills
+    all_skills = course_matrix.columns.tolist()
+    student_vector = [1 if skill in skills else 0 for skill in all_skills]
+    # Compute similarity
+    similarity = cosine_similarity([student_vector], course_matrix.values)[0]
+    recommendations = []
+    for idx, course in enumerate(course_matrix.index):
+        course_name = course[1]
+        recommendations.append({
+            "course_name": course_name,
+            "score": round(similarity[idx], 3)
+        })
+    # Sort by score descending
+    recommendations.sort(key=lambda x: x["score"], reverse=True)
+    courses_conn.close()
+    return recommendations
+
+@app.post("/personalized-recommendations")
+async def personalized_recommendations(request: Request):
+    data = await request.json()
+    skills = data.get("skills", [])
+    recs = recommend_for_skills(skills)
+    return JSONResponse(content={"recommendations": recs})
+
+# Skill extraction logic
+SKILL_KEYWORDS = ["python", "aws", "cli", "networking", "docker", "linux", "git", "mlops", "devops",
+    "java", "c++", "cloud", "azure", "gcp", "kubernetes", "terraform", "ansible",
+    "sql", "nosql", "data science", "machine learning", "deep learning", "pandas",
+    "numpy", "scikit-learn", "flask", "django", "rest api", "agile", "scrum"]
 
 def extract_text_from_pdf(file_path):
     text = ""
@@ -31,12 +69,9 @@ def extract_skills(text):
 
 @app.post("/extract-skills/")
 async def extract_skills_api(file: UploadFile = File(...)):
-    # Save uploaded file temporarily
     temp_path = f"temp_{file.filename}"
     with open(temp_path, "wb") as f:
         f.write(await file.read())
-
-    # Extract text
     if file.filename.endswith(".pdf"):
         text = extract_text_from_pdf(temp_path)
     elif file.filename.endswith(".docx"):
@@ -44,10 +79,48 @@ async def extract_skills_api(file: UploadFile = File(...)):
     else:
         os.remove(temp_path)
         return JSONResponse({"error": "Unsupported file type"}, status_code=400)
-
     os.remove(temp_path)
     skills = extract_skills(text)
     return {"skills": skills}
 
+# Recommendation logic
+def get_recommendations():
+    students_conn = sqlite3.connect('data/students.db')
+    courses_conn = sqlite3.connect('data/courses.db')
+    student_df = pd.read_sql_query('''
+        SELECT s.student_id, s.name, sk.skill, sk.level
+        FROM students s
+        JOIN student_skills sk ON s.student_id = sk.student_id
+    ''', students_conn)
+    course_df = pd.read_sql_query('''
+        SELECT c.course_id, c.course_name, cs.skill, cs.weight
+        FROM courses c
+        JOIN course_skills cs ON c.course_id = cs.course_id
+    ''', courses_conn)
+    student_matrix = student_df.pivot_table(index=['student_id','name'], columns='skill', values='level', fill_value=0)
+    course_matrix = course_df.pivot_table(index=['course_id','course_name'], columns='skill', values='weight', fill_value=0)
+    student_matrix, course_matrix = student_matrix.align(course_matrix, join='outer', axis=1, fill_value=0)
+    similarity = cosine_similarity(student_matrix, course_matrix)
+    similarity_df = pd.DataFrame(similarity, index=student_matrix.index, columns=course_matrix.index)
+    recommendations = {}
+    for student in similarity_df.index:
+        student_name = student[1]
+        ranked = similarity_df.loc[student].sort_values(ascending=False)
+        recommendations[student_name] = []
+        for course_id, score in ranked.items():
+            course_name = course_id[1]
+            recommendations[student_name].append({
+                "course_name": course_name,
+                "score": round(score, 3)
+            })
+    students_conn.close()
+    courses_conn.close()
+    return recommendations
+
+@app.get("/recommendations")
+def recommendations_api():
+    recs = get_recommendations()
+    return JSONResponse(content=recs)
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)
