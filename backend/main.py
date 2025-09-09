@@ -14,7 +14,7 @@ import spacy
 app = FastAPI()
 
 # Personalized recommendation based on extracted skills
-def recommend_for_skills(skills: List[str]):
+def recommend_for_skills(skill_levels: dict):
     courses_conn = sqlite3.connect('data/courses.db')
     course_df = pd.read_sql_query('''
         SELECT c.course_id, c.course_name, cs.skill, cs.weight
@@ -22,10 +22,9 @@ def recommend_for_skills(skills: List[str]):
         JOIN course_skills cs ON c.course_id = cs.course_id
     ''', courses_conn)
     course_matrix = course_df.pivot_table(index=['course_id','course_name'], columns='skill', values='weight', fill_value=0)
-    # Create student vector from skills
     all_skills = course_matrix.columns.tolist()
-    student_vector = [1 if skill in skills else 0 for skill in all_skills]
-    # Compute similarity
+    # Build student vector from skill_levels (default 0 if not present)
+    student_vector = [skill_levels.get(skill, 0) for skill in all_skills]
     similarity = cosine_similarity([student_vector], course_matrix.values)[0]
     recommendations = []
     for idx, course in enumerate(course_matrix.index):
@@ -34,7 +33,6 @@ def recommend_for_skills(skills: List[str]):
             "course_name": course_name,
             "score": round(similarity[idx], 3)
         })
-    # Sort by score descending
     recommendations.sort(key=lambda x: x["score"], reverse=True)
     courses_conn.close()
     return recommendations
@@ -42,8 +40,8 @@ def recommend_for_skills(skills: List[str]):
 @app.post("/personalized-recommendations")
 async def personalized_recommendations(request: Request):
     data = await request.json()
-    skills = data.get("skills", [])
-    recs = recommend_for_skills(skills)
+    skill_levels = data.get("skill_levels", {})
+    recs = recommend_for_skills(skill_levels)
     return JSONResponse(content={"recommendations": recs})
 
 # Skill extraction logic
@@ -116,6 +114,8 @@ def get_recommendations():
     recommendations = {}
     for student in similarity_df.index:
         student_name = student[1]
+        if student_name.lower() in ["alice", "bob"]:
+            continue
         ranked = similarity_df.loc[student].sort_values(ascending=False)
         recommendations[student_name] = []
         for course_id, score in ranked.items():
@@ -138,10 +138,7 @@ def recommendations_for_name_api(student_name: str):
     recs = get_recommendations_for_name(student_name)
     return JSONResponse(content={"recommendations": recs})
 
-@app.get("/recommendations")
-def recommendations_api():
-    recs = get_recommendations()
-    return JSONResponse(content=recs)
+
 
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)

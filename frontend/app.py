@@ -20,16 +20,22 @@ if uploaded_file:
             skills = data.get("skills", [])
             st.write(f"Extracted Name: {name}")
             st.write(f"Extracted Skills: {', '.join(skills) if skills else 'None found'}")
-            # Get recommendations for this name
-            rec_url = f"http://127.0.0.1:8000/recommendations/{name}"
-            rec_response = requests.get(rec_url)
-            if rec_response.status_code == 200:
-                recs = rec_response.json().get("recommendations", [])
-                st.header(f"Course Recommendations for {name}:")
-                for course in recs:
-                    st.write(f"{course['course_name']}: {course['score']}")
-            else:
-                st.error("Could not fetch recommendations for this name.")
+            st.subheader("Detected skills (edit levels 1–10):")
+            skill_levels = {}
+            cols = st.columns(2)
+            for idx, skill in enumerate(skills):
+                with cols[idx % 2]:
+                    skill_levels[skill] = st.slider(skill, 1, 10, 1)
+            if st.button("Get Personalized Recommendations"):
+                payload = {"skill_levels": skill_levels}
+                rec_response = requests.post(personalized_url, json=payload)
+                if rec_response.status_code == 200:
+                    recs = rec_response.json().get("recommendations", [])
+                    st.header(f"Course Recommendations for {name}:")
+                    for course in recs:
+                        st.write(f"{course['course_name']}: {course['score']}")
+                else:
+                    st.error("Could not fetch personalized recommendations.")
         else:
             st.error(f"Error: {response.json().get('error', 'Unknown error')}")
     except Exception as e:
