@@ -1,5 +1,55 @@
+
 import streamlit as st
 import requests
+
+
+# Sidebar navigation
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["Home", "Add Course"])
+
+if page == "Add Course":
+    st.title("Add a New Course")
+    course_name = st.text_input("Course Name")
+    course_details = st.text_area("Course Details")
+    video_file = st.file_uploader("Upload Course Video", type=["mp4", "mov", "avi"])
+
+    # Dynamic modules, topics, subtopics
+    if "modules" not in st.session_state:
+        st.session_state.modules = []
+    num_modules = st.number_input("Number of Modules", min_value=1, max_value=10, value=len(st.session_state.modules) or 1)
+    while len(st.session_state.modules) < num_modules:
+        st.session_state.modules.append({"name": "", "topics": []})
+    while len(st.session_state.modules) > num_modules:
+        st.session_state.modules.pop()
+
+    for m_idx, module in enumerate(st.session_state.modules):
+        st.subheader(f"Module {m_idx+1}")
+        module["name"] = st.text_input(f"Module Name {m_idx+1}", value=module["name"], key=f"modname{m_idx}")
+        num_topics = st.number_input(f"Number of Topics in Module {m_idx+1}", min_value=1, max_value=10, value=len(module["topics"]) or 1, key=f"numtopics{m_idx}")
+        while len(module["topics"]) < num_topics:
+            module["topics"].append({"name": "", "subtopics": []})
+        while len(module["topics"]) > num_topics:
+            module["topics"].pop()
+        for t_idx, topic in enumerate(module["topics"]):
+            topic["name"] = st.text_input(f"Topic Name {m_idx+1}-{t_idx+1}", value=topic["name"], key=f"topicname{m_idx}-{t_idx}")
+            num_subtopics = st.number_input(f"Number of Subtopics in Topic {m_idx+1}-{t_idx+1}", min_value=1, max_value=10, value=len(topic["subtopics"]) or 1, key=f"numsubtopics{m_idx}-{t_idx}")
+            while len(topic["subtopics"]) < num_subtopics:
+                topic["subtopics"].append("")
+            while len(topic["subtopics"]) > num_subtopics:
+                topic["subtopics"].pop()
+            for s_idx in range(num_subtopics):
+                topic["subtopics"][s_idx] = st.text_input(f"Subtopic Name {m_idx+1}-{t_idx+1}-{s_idx+1}", value=topic["subtopics"][s_idx], key=f"subtopic{m_idx}-{t_idx}-{s_idx}")
+
+    if st.button("Submit Course"):
+        course_data = {
+            "course_name": course_name,
+            "course_details": course_details,
+            "video_file": video_file.name if video_file else None,
+            "modules": st.session_state.modules
+        }
+        st.success(f"Course '{course_name}' added!")
+        st.json(course_data)
+    st.stop()
 
 st.title("AutoOps Classroom: Skill Extractor & Course Recommender")
 
