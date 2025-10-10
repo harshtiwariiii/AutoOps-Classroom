@@ -15,7 +15,7 @@ app = FastAPI()
 
 # Personalized recommendation based on extracted skills
 def recommend_for_skills(skill_levels: dict):
-    courses_conn = sqlite3.connect('data/courses.db')
+    courses_conn = sqlite3.connect('../data/courses.db')
     course_df = pd.read_sql_query('''
         SELECT c.course_id, c.course_name, cs.skill, cs.weight
         FROM courses c
@@ -58,9 +58,22 @@ def extract_text_from_pdf(file_path):
     return text
 
 # Improved name extraction using spaCy
+try:
+    nlp = spacy.load("en_core_web_sm")
+except OSError:
+    # Fallback if spaCy model is not installed
+    nlp = None
 
-nlp = spacy.load("en_core_web_sm")
 def extract_name(text):
+    if nlp is None:
+        # Simple fallback name extraction
+        lines = text.split('\n')
+        for line in lines[:5]:  # Check first 5 lines
+            line = line.strip()
+            if len(line) > 2 and len(line) < 50 and not any(char.isdigit() for char in line):
+                return line
+        return "Unknown"
+    
     doc = nlp(text)
     for ent in doc.ents:
         if ent.label_ == "PERSON":
@@ -94,8 +107,8 @@ async def extract_skills_api(file: UploadFile = File(...)):
 
 # Recommendation logic
 def get_recommendations():
-    students_conn = sqlite3.connect('data/students.db')
-    courses_conn = sqlite3.connect('data/courses.db')
+    students_conn = sqlite3.connect('../data/students.db')
+    courses_conn = sqlite3.connect('../data/courses.db')
     student_df = pd.read_sql_query('''
         SELECT s.student_id, s.name, sk.skill, sk.level
         FROM students s
@@ -133,6 +146,39 @@ def get_recommendations_for_name(student_name):
     all_recs = get_recommendations()
     return all_recs.get(student_name, [])
 
+@app.post("/add-course")
+async def add_course(request: Request):
+    data = await request.json()
+    course_name = data.get("course_name")
+    course_details = data.get("course_details")
+    
+    if not course_name:
+        return JSONResponse({"error": "Course name is required"}, status_code=400)
+    
+    # Add course to database
+    courses_conn = sqlite3.connect('../data/courses.db')
+    cursor = courses_conn.cursor()
+    
+    # Insert course
+    cursor.execute("INSERT INTO courses (course_name) VALUES (?)", (course_name,))
+    course_id = cursor.lastrowid
+    
+    # Extract skills from course details and add to course_skills
+    skills = extract_skills(course_details)
+    for skill in skills:
+        cursor.execute("INSERT INTO course_skills (course_id, skill, weight) VALUES (?, ?, ?)", 
+                     (course_id, skill, 5.0))  # Default weight of 5
+    
+    courses_conn.commit()
+    courses_conn.close()
+    
+    return JSONResponse({"message": f"Course '{course_name}' added successfully", "course_id": course_id})
+
+@app.get("/recommendations")
+def recommendations_api():
+    recs = get_recommendations()
+    return JSONResponse(content=recs)
+
 @app.get("/recommendations/{student_name}")
 def recommendations_for_name_api(student_name: str):
     recs = get_recommendations_for_name(student_name)
@@ -141,4 +187,4 @@ def recommendations_for_name_api(student_name: str):
 
 
 if __name__ == "__main__":
-    uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

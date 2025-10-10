@@ -7,3 +7,5 @@ python-multipart
 pandas 
 scikit-learn
 spacy
+beautifulsoup4
+requests
