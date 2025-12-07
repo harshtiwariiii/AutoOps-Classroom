@@ -1,1 +1,11 @@
 streamlit
+fastapi
+uvicorn
+pdfplumber
+python-docx
+python-multipart
+pandas 
+scikit-learn
+spacy
+beautifulsoup4
+requests
